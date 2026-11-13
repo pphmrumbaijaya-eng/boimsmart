@@ -1,0 +1,6 @@
+{
+  "name": "BoimSmart AI - Asisten Guru & Generator Soal Kurikulum",
+  "description": "Platform AI terpadu untuk chatbot edukasi berbasis teks & gambar, pembuat soal otomatis berbasis Kurikulum Merdeka & K13 dengan multi-materi upload, ekspor Word (.docx), dan pemantauan siswa.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

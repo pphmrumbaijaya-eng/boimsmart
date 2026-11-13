@@ -1,0 +1,74 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated user profile for BoimSmart AI",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID",
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "description": "Display name of the educator or student",
+          "maxLength": 120
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Primary email address",
+          "maxLength": 200
+        },
+        "role": {
+          "type": "string",
+          "enum": ["Guru", "Dosen", "Siswa", "Umum"],
+          "description": "User role"
+        },
+        "school": {
+          "type": "string",
+          "description": "School or institution name",
+          "maxLength": 160
+        },
+        "teachingSubject": {
+          "type": "string",
+          "description": "Primary subject",
+          "maxLength": 120
+        },
+        "avatarUrl": {
+          "type": "string",
+          "description": "Profile avatar URL",
+          "maxLength": 500
+        },
+        "isGoogleLinked": {
+          "type": "boolean"
+        },
+        "googleEmail": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "isGithubLinked": {
+          "type": "boolean"
+        },
+        "githubUsername": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "createdAt": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": ["uid", "name", "email", "role", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserProfile"
+      },
+      "description": "Private user profile documents owned by the authenticated user"
+    }
+  }
+}

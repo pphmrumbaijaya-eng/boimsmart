@@ -1,0 +1,61 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'name', 'email', 'role', 'createdAt']) &&
+        data.keys().hasOnly([
+          'uid', 'name', 'email', 'role', 'school', 'teachingSubject',
+          'avatarUrl', 'isGoogleLinked', 'googleEmail',
+          'isGithubLinked', 'githubUsername', 'createdAt'
+        ]) &&
+        data.uid is string && data.uid == userId && data.uid.size() <= 128 &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 200 &&
+        data.role in ['Guru', 'Dosen', 'Siswa', 'Umum'] &&
+        data.createdAt is string && data.createdAt.size() <= 64 &&
+        (!('school' in data) || (data.school is string && data.school.size() <= 160)) &&
+        (!('teachingSubject' in data) || (data.teachingSubject is string && data.teachingSubject.size() <= 120)) &&
+        (!('avatarUrl' in data) || (data.avatarUrl is string && data.avatarUrl.size() <= 500)) &&
+        (!('isGoogleLinked' in data) || data.isGoogleLinked is bool) &&
+        (!('googleEmail' in data) || (data.googleEmail is string && data.googleEmail.size() <= 200)) &&
+        (!('isGithubLinked' in data) || data.isGithubLinked is bool) &&
+        (!('githubUsername' in data) || (data.githubUsername is string && data.githubUsername.size() <= 100));
+    }
+
+    // Private user profiles (owner-only read/write, no blanket list)
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow create: if isValidId(userId) && isOwner(userId) && isValidUserProfile(incoming(), userId);
+      allow update: if isValidId(userId) && isOwner(userId) &&
+        isValidUserProfile(incoming(), userId) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(userId) && isOwner(userId);
+    }
+  }
+}
