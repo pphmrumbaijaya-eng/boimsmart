@@ -150,5 +150,10 @@ export interface ChatMessage {
   text: string;
   imageBase64?: string;
   mimeType?: string;
+  attachmentType?: 'image' | 'pdf' | 'document';
+  fileName?: string;
+  fileSize?: string;
+  extractedText?: string;
+  sources?: Array<{ title: string; url: string }>;
   timestamp: string;
 }

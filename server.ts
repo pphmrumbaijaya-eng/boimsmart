@@ -56,6 +56,28 @@ function cleanJsonOutput(text: string): string {
   return cleaned.trim();
 }
 
+// Helper to safely extract visible text from Gemini responses
+function extractTextFromGeminiResponse(response: any): string {
+  try {
+    const direct = typeof response?.text === 'string' ? response.text.trim() : '';
+    if (direct) return direct;
+  } catch {
+    // response.text getter can throw when parts/candidates are empty or blocked
+  }
+
+  const parts = response?.candidates?.[0]?.content?.parts;
+  if (Array.isArray(parts)) {
+    const visibleText = parts
+      .filter((p: any) => !p?.thought && typeof p?.text === 'string')
+      .map((p: any) => p.text)
+      .join('')
+      .trim();
+    if (visibleText) return visibleText;
+  }
+
+  return '';
+}
+
 // Resilient API Caller with Retries & Fallback
 async function callGeminiWithRetry(params: any, retries = 2, delayMs = 1000): Promise<any> {
   const models = [
@@ -250,7 +272,7 @@ app.get(['/auth/callback', '/auth/callback/'], async (req, res) => {
 // 2. Multimodal Chat Endpoint for BoimSmart
 app.post('/api/chat', async (req, res) => {
   try {
-    const { messages, userRole, subjectContext } = req.body;
+    const { messages, userRole, subjectContext, deepThink } = req.body;
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ error: 'Daftar pesan tidak boleh kosong.' });
@@ -262,64 +284,219 @@ app.post('/api/chat', async (req, res) => {
       });
     }
 
-    const systemInstruction = `Kamu adalah "BoimSmart AI", asisten kecerdasan buatan edukasi nomor 1 di Indonesia yang ramah, cerdas, solutif, dan berwawasan luas.
-Karakteristik & Tugasmu:
-1. Menguasai secara mendalam Kurikulum Merdeka (Fase A hingga F, Capaian Pembelajaran, Profil Pelajar Pancasila) dan Kurikulum 2013 (K13).
-2. Membantu guru dalam menyusun rencana pembelajaran, modul ajar, analisis materi, dan ide asesmen.
-3. Membantu siswa dalam memahami konsep pelajaran, membongkar soal sulit, rumus matematika/sains, analisis teks bahasa, sejarah, dan ilmu sosial dengan bahasa yang mudah dimengerti, interaktif, dan penuh motivasi.
-4. Multimodal: Jika pengguna melampirkan gambar (seperti foto soal, grafik, diagram, atau buku pelajaran), analisis gambar tersebut dengan teliti langkah demi langkah, berikan jawaban tepat beserta penjelasan logisnya.
-5. Gunakan format markdown yang rapi: gunakan heading, bullet point, bold teks penting, dan rumus matematika yang jelas.
-6. Nada bicara bersahabat, sopan, memotivasi, dan selalu siap sedia membantu pendidikan Indonesia.`;
+    const currentDateWib = new Date().toLocaleDateString('id-ID', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'Asia/Jakarta',
+    });
 
-    // Format the latest message or history into Gemini contents
-    const lastMsg = messages[messages.length - 1];
+    const systemInstruction = `Kamu adalah "BoimSmart AI", asisten AI Indonesia yang sangat cerdas, serba tahu, berwawasan luas lintas disiplin ilmu, hangat, ramah, dan menyenangkan diajak berdiskusi.
+Informasi Waktu Saat Ini: ${currentDateWib} (WIB).
+
+Kemampuan & Cakupan Pengetahuan ("Serba Tahu"):
+1. Kuasai pengetahuan luas di SEMUA bidang:
+   - **Pendidikan & Kurikulum Indonesia**: Kurikulum Merdeka (Fase A–F, CP, TP, ATP, Modul Ajar, P5), K13, asesmen HOTS/LOTS, PPG, ANBK, TKA, SPMB, serta kebijakan Kemendikdasmen & Kemenag terbaru.
+   - **Sains, Matematika & Teknik**: Matematika, Fisika, Kimia, Biologi, Astronomi, Kedokteran/Kesehatan dasar, hingga analisis dan penyelesaian soal langkah demi langkah.
+   - **Teknologi, Pemrograman & AI**: Coding (JavaScript, TypeScript, Python, SQL, Web/Mobile), perkembangan AI terkini, keamanan digital, serta produktivitas kerja.
+   - **Humaniora, Ekonomi, Bahasa & Umum**: Sejarah, Geografi, Ekonomi/Bisnis, Hukum & Tata Negara, Bahasa Indonesia/Inggris/Arab/Daerah, Pendidikan Agama (Al-Qur'an Hadist, Fikih, Akidah Akhlak, SKI), literatur, budaya, hingga tips praktis kehidupan sehari-hari.
+2. **Aturan Sapaan & Gaya Bahasa Alami**:
+   - Gunakan sapaan yang luwes, natural, dan menyesuaikan alur obrolan: boleh memakai **"Bro"** secukupnya di awal/penutup bila terasa akrab, lalu kombinasikan secara alami dengan **"kamu"** atau **"Anda"** tergantung konteks (misalnya **"kamu"** untuk diskusi santai dan **"Anda"** untuk penjelasan yang lebih informatif). Jangan memaksakan kata "Bro" berulang-ulang di setiap kalimat.
+   - **Tetap hindari** sapaan formal kaku seperti **"Bapak/Ibu"**, **"Bapak/Ibu Guru"**, **"Pak/Bu"**, atau **"Rekan Guru"**, meskipun sedang membahas topik pendidikan atau pelajaran.
+   - Gunakan gaya bahasa Indonesia yang cerdas, hangat, ramah, jelas, dan menyenangkan.
+
+Pengetahuan Terbaru & Verifikasi Fakta Nyata:
+1. Selalu gunakan pencarian Google Search untuk pertanyaan mengenai berita terkini, fakta terbaru, isu viral, tokoh publik, kebijakan pemerintah/kementerian terbaru, perkembangan teknologi/AI saat ini, harga/ekonomi, jadwal resmi, atau peristiwa aktual hingga ${currentDateWib}.
+2. Utamakan akurasi fakta nyata dan terkini; jangan pernah mengarang tanggal, angka, atau sumber. Jika pengguna menanyakan isu, rumor, berita viral, atau klaim yang belum tentu terjadi (misalnya kabar pengunduran diri tokoh publik atau isu kontroversial), periksa faktanya secara netral, objektif, dan jelas—jelaskan konteks sebenarnya atau luruskan bila kabar tersebut hoaks / tidak benar / belum terkonfirmasi.
+
+Aturan Penulisan & Kerapian Format:
+1. Tulis jawaban dengan rapi, jernih, langsung ke inti persoalan namun tetap akrab dan menyenangkan:
+   - Gunakan subjudul (## atau ###) bila pembahasan memiliki beberapa bagian.
+   - Gunakan poin singkat atau langkah bernomor yang tertata rapi, beri jeda antarparagraf, dan gunakan **tebal** secukupnya untuk istilah kunci.
+   - Gunakan simbol Unicode bersih untuk rumus sederhana (H₂O, CO₂, O₂, ×, ÷, ², √) bila memungkinkan, dan blok kode rapi untuk pemrograman.
+   - Gunakan tabel Markdown rapi untuk perbandingan atau rangkuman terstruktur.
+2. Jika pengguna melampirkan **foto, dokumen PDF, Word (.docx), atau file teks**, telaah seluruh isinya dengan cermat lalu berikan analisis atau jawaban yang akurat dan mudah dimengerti.
+3. Tutup dengan kalimat singkat yang ramah atau tawaran bantuan lanjutan yang relevan.`;
+
+    const lastMsg = messages[messages.length - 1] || {};
     const parts: any[] = [];
 
-    // Context from recent conversation
+    const formatMsgForPrompt = (m: any) => {
+      const speaker = m?.role === 'user' ? 'Pengguna' : 'BoimSmart AI';
+      let line = `${speaker}: ${String(m?.text || '')}`;
+      if (m?.fileName) {
+        line += ` [Lampiran: ${String(m.fileName)}]`;
+      }
+      if (m?.extractedText) {
+        const snippet = String(m.extractedText).slice(0, 6000);
+        line += `\n[Isi Dokumen "${String(m.fileName || 'Lampiran')}":]\n${snippet}`;
+      }
+      return line;
+    };
+
     let promptText = '';
+    if (subjectContext) {
+      promptText += `[Konteks: ${String(subjectContext)} | Gaya Sapaan: Luwes (Bro/kamu/Anda) | Tanggal: ${currentDateWib}]\n`;
+    }
+
     if (messages.length > 1) {
       promptText += `[Riwayat Percakapan Sebelumnya]:\n`;
       messages.slice(-5, -1).forEach((m: any) => {
-        promptText += `${m.role === 'user' ? 'Pengguna' : 'BoimSmart'}: ${m.text}\n`;
+        promptText += `${formatMsgForPrompt(m)}\n`;
       });
-      promptText += `\n[Pertanyaan Terbaru Pengguna]:\n${lastMsg.text || ''}`;
+      promptText += `\n[Pesan Terbaru Pengguna]:\n${String(lastMsg.text || 'Tolong bantu analisis lampiran yang saya kirim ini.')}`;
     } else {
-      promptText = lastMsg.text || 'Halo BoimSmart, bantu saya belajar!';
+      promptText += String(lastMsg.text || 'Halo BoimSmart AI, tolong bantu jelaskan materi ini!');
     }
 
-    if (subjectContext) {
-      promptText = `[Konteks Pembelajaran: ${subjectContext}]\n${promptText}`;
+    if (lastMsg.extractedText) {
+      const docContent = String(lastMsg.extractedText).slice(0, 45000);
+      promptText += `\n\n[ISI DOKUMEN UNGGAHAN "${String(lastMsg.fileName || 'Dokumen')}"]:\n${docContent}`;
     }
 
     parts.push({ text: promptText });
 
-    // Handle image if provided in the latest message
+    // Attach inline binary only for Gemini-supported multimodal MIME types (image/* or application/pdf)
     if (lastMsg.imageBase64 && lastMsg.mimeType) {
-      const cleanBase64 = lastMsg.imageBase64.includes('base64,')
-        ? lastMsg.imageBase64.split('base64,')[1]
-        : lastMsg.imageBase64;
-
-      parts.unshift({
-        inlineData: {
-          mimeType: lastMsg.mimeType,
-          data: cleanBase64,
-        },
-      });
+      const mime = String(lastMsg.mimeType).toLowerCase();
+      const isSupportedInline = mime.startsWith('image/') || mime === 'application/pdf';
+      if (isSupportedInline) {
+        const cleanBase64 = String(lastMsg.imageBase64).includes('base64,')
+          ? String(lastMsg.imageBase64).split('base64,')[1]
+          : String(lastMsg.imageBase64);
+        if (cleanBase64 && cleanBase64.length > 0) {
+          parts.unshift({
+            inlineData: {
+              mimeType: mime,
+              data: cleanBase64,
+            },
+          });
+        }
+      }
     }
 
-    const response = await callGeminiWithRetry({
-      contents: { parts },
-      config: {
-        systemInstruction,
-      },
-    });
+    let response: any;
+    let reply = '';
+    const userTextLower = String(lastMsg.text || '').trim();
+    const isSimpleGreeting = /^(halo|hai|hi|hello|pagi|siang|sore|malam|assalamualaikum|tes|test|makasih|terima kasih|ok|oke)[!.\s]*$/i.test(
+      userTextLower
+    );
+    const shouldUseGoogleSearch =
+      !isSimpleGreeting && userTextLower.length >= 4 && !lastMsg.imageBase64;
 
-    const reply = response.text || 'Maaf, saya tidak dapat menghasilkan respon untuk saat ini.';
-    res.json({ reply });
+    const chatThinkingConfig = deepThink
+      ? { thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH } }
+      : {};
+
+    if (shouldUseGoogleSearch) {
+      try {
+        response = await callGeminiWithRetry({
+          contents: { parts },
+          config: {
+            systemInstruction,
+            tools: [{ googleSearch: {} }],
+            ...chatThinkingConfig,
+          },
+        });
+        reply = extractTextFromGeminiResponse(response);
+      } catch (searchErr: any) {
+        const errText = String(searchErr?.message || '');
+        if (
+          errText.includes('400') ||
+          errText.includes('403') ||
+          errText.includes('429') ||
+          errText.includes('RESOURCE_EXHAUSTED') ||
+          errText.includes('INVALID_ARGUMENT') ||
+          errText.includes('googleSearch')
+        ) {
+          response = null;
+        } else {
+          throw searchErr;
+        }
+      }
+    }
+
+    // Fallback 1: Standard model call without search tools if search was skipped, failed, or returned empty text
+    if (!reply) {
+      response = await callGeminiWithRetry({
+        contents: { parts },
+        config: {
+          systemInstruction,
+          ...chatThinkingConfig,
+        },
+      });
+      reply = extractTextFromGeminiResponse(response);
+    }
+
+    // Fallback 2: If primary model returned empty candidate (e.g., finishReason SAFETY/OTHER), retry directly with gemini-3.1-flash-lite
+    if (!reply) {
+      const finishReason = response?.candidates?.[0]?.finishReason;
+      console.warn('Primary chat response empty, retrying fallback model. finishReason:', finishReason);
+      const fallbackResp = await ai.models.generateContent({
+        model: 'gemini-3.1-flash-lite',
+        contents: { parts },
+        config: {
+          systemInstruction,
+          thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
+        },
+      });
+      const fallbackText = extractTextFromGeminiResponse(fallbackResp);
+      if (fallbackText) {
+        response = fallbackResp;
+        reply = fallbackText;
+      } else {
+        console.warn(
+          'Fallback chat response also empty:',
+          JSON.stringify({
+            finishReason: fallbackResp?.candidates?.[0]?.finishReason,
+            promptFeedback: fallbackResp?.promptFeedback,
+          })
+        );
+      }
+    }
+
+    const rawChunks = response?.candidates?.[0]?.groundingMetadata?.groundingChunks;
+    const seenUrls = new Set<string>();
+    const sources: Array<{ title: string; url: string }> = Array.isArray(rawChunks)
+      ? rawChunks
+          .map((chunk: any) => ({
+            title: String(chunk?.web?.title || 'Sumber Referensi Terkini').trim(),
+            url: String(chunk?.web?.uri || '').trim(),
+          }))
+          .filter((s: { title: string; url: string }) => {
+            if (!/^https?:\/\//i.test(s.url) || seenUrls.has(s.url)) return false;
+            seenUrls.add(s.url);
+            return true;
+          })
+          .slice(0, 6)
+      : [];
+
+    if (!reply) {
+      reply =
+        'Maaf ya, sistem AI belum bisa memproses topik atau kalimat tersebut secara langsung saat ini. Boleh coba ubah susunan pertanyaan kamu agar lebih spesifik ya!';
+    }
+    res.json({ reply, sources });
   } catch (error: any) {
     console.error('Chat error:', error);
-    res.status(500).json({
-      error: error.message || 'Terjadi kesalahan saat memproses chat dengan BoimSmart AI.',
+    const rawMsg = String(error?.message || '');
+    const isQuotaError =
+      rawMsg.includes('429') ||
+      rawMsg.includes('RESOURCE_EXHAUSTED') ||
+      rawMsg.includes('quota');
+    const isUnavailable =
+      rawMsg.includes('503') ||
+      rawMsg.includes('UNAVAILABLE') ||
+      rawMsg.includes('high demand');
+
+    const friendlyError = isQuotaError
+      ? 'Batas kuota permintaan AI sesaat sedang penuh. Tunggu beberapa detik lalu kirim ulang pesan kamu ya!'
+      : isUnavailable
+      ? 'Server AI sedang sibuk melayani banyak permintaan. Silakan coba kirim ulang sebentar lagi ya!'
+      : rawMsg || 'Terjadi kesalahan saat memproses chat dengan BoimSmart AI.';
+
+    res.status(isQuotaError ? 429 : 500).json({
+      error: friendlyError,
     });
   }
 });
